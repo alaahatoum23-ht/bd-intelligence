@@ -9,29 +9,16 @@ st.set_page_config(page_title="Alaa BD", layout="wide")
 # ---------- STYLE ----------
 st.markdown("""
 <style>
-.main {
-    background-color: #0f172a;
-}
-.header {
-    font-size: 34px;
-    font-weight: 700;
-}
+.main {background-color:#0f172a;}
+.header {font-size:34px;font-weight:700;}
 .card {
-    background: #111827;
-    padding: 20px;
-    border-radius: 14px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    background:#111827;
+    padding:20px;
+    border-radius:14px;
+    margin-bottom:10px;
 }
-.metric {
-    font-size: 28px;
-    font-weight: bold;
-}
-.small {
-    color: #9ca3af;
-}
-.section {
-    margin-top: 30px;
-}
+.metric {font-size:28px;font-weight:bold;}
+.small {color:#9ca3af;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +42,7 @@ df = st.session_state.data
 # ---------- SCRAPER ----------
 def get_text(url):
     try:
-        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
+        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=6)
         soup = BeautifulSoup(res.text, "html.parser")
         text = " ".join([t.get_text() for t in soup.find_all(["p","h1","h2","h3"])])
         return text.lower()[:8000]
@@ -64,15 +51,39 @@ def get_text(url):
 
 # ---------- ANALYSIS ----------
 def analyze_text(text):
-    growth = len(re.findall(r"(growth|expand|scale)", text))
-    funding = len(re.findall(r"(funding|investment)", text))
-    tech = len(re.findall(r"(ai|platform|software)", text))
-    partner = len(re.findall(r"(partner|collaboration)", text))
 
-    score = min(growth*5 + funding*6 + tech*4 + partner*6, 100)
-    prob = min(int(score * 0.9), 95)
+    signals = {
+        "growth": len(re.findall(r"(growth|expand|scale|launch)", text)),
+        "funding": len(re.findall(r"(funding|investment|series|capital)", text)),
+        "tech": len(re.findall(r"(ai|platform|software|technology)", text)),
+        "partnership": len(re.findall(r"(partner|collaboration|alliance)", text)),
+        "market": len(re.findall(r"(mena|gcc|global|market)", text))
+    }
 
-    return score, prob
+    weights = {
+        "growth": 4,
+        "funding": 5,
+        "tech": 3,
+        "partnership": 6,
+        "market": 2
+    }
+
+    score = 0
+    explanation = []
+
+    for key in signals:
+        contribution = signals[key] * weights[key]
+        score += contribution
+
+        if signals[key] > 0:
+            explanation.append(
+                f"{key.upper()} detected ({signals[key]} mentions) → +{contribution} points"
+            )
+
+    score = min(score, 100)
+    probability = min(int(score * 0.9), 95)
+
+    return score, probability, signals, explanation
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
@@ -88,8 +99,6 @@ if page == "Dashboard":
 
     avg = int(df["score"].mean()) if not df.empty else 0
     c3.markdown(f'<div class="card"><div class="metric">{avg}</div><div class="small">Avg Score</div></div>', unsafe_allow_html=True)
-
-    st.markdown("### Top Opportunities")
 
     if not df.empty:
         st.dataframe(df.sort_values(by="score", ascending=False), use_container_width=True)
@@ -107,9 +116,9 @@ elif page == "Analyze":
         text = get_text(url)
 
         if text == "":
-            st.error("Failed to fetch data")
+            st.error("❌ Failed to fetch data")
         else:
-            score, prob = analyze_text(text)
+            score, prob, signals, explanation = analyze_text(text)
 
             st.success("Analysis Complete")
 
@@ -117,11 +126,24 @@ elif page == "Analyze":
             col1.metric("Score", score)
             col2.metric("Probability", f"{prob}%")
 
+            st.markdown("### 📊 Why this score?")
+            for line in explanation:
+                st.write("✔️ " + line)
+
+            st.markdown("### 🧠 Interpretation")
+
+            if score > 80:
+                st.success("High opportunity: strong signals detected")
+            elif score > 60:
+                st.info("Moderate opportunity")
+            else:
+                st.warning("Low opportunity")
+
             st.markdown("### Strategy")
-            st.info("Expand partnership / market entry opportunity")
+            st.info("Recommend partnership / expansion approach")
 
             st.markdown("### Email")
-            st.code(f"Let's collaborate with {name} for expansion.")
+            st.code(f"Let's collaborate with {name} for expansion opportunities.")
 
             new = pd.DataFrame([{
                 "name": name,
@@ -145,6 +167,8 @@ elif page == "Pipeline":
             Probability: {row['probability']}%
             </div>
             """, unsafe_allow_html=True)
+    else:
+        st.info("No data")
 
 # ---------- INSIGHTS ----------
 elif page == "Insights":
@@ -154,4 +178,4 @@ elif page == "Insights":
     if not df.empty:
         st.bar_chart(df.set_index("name")["score"])
     else:
-        st.warning("No data")
+        st.warning("No data yet")
