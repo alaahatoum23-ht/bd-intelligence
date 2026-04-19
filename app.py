@@ -1,107 +1,67 @@
 import streamlit as st
-import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+import openai
 
-st.set_page_config(page_title="BD Intelligence OS", layout="wide")
+st.set_page_config(layout="wide")
 
-# ---------- STYLE ----------
-st.markdown("""
-<style>
-.big-title {
-    font-size:40px !important;
-    font-weight:700;
-}
-.card {
-    padding:20px;
-    border-radius:15px;
-    background-color:#111;
-    color:white;
-}
-</style>
-""", unsafe_allow_html=True)
+st.title("🚀 BD Intelligence OS - AI Powered")
 
-# ---------- HEADER ----------
-st.markdown('<p class="big-title">🚀 BD Intelligence OS</p>', unsafe_allow_html=True)
+# ---------- API ----------
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# ---------- SIDEBAR ----------
-page = st.sidebar.selectbox("Navigation", [
-    "Dashboard",
-    "Companies",
-    "Add Company",
-    "Executive View"
-])
+# ---------- INPUT ----------
+company_name = st.text_input("Company Name")
+website = st.text_input("Company Website")
 
-# ---------- DATA ----------
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame([
-        {"name": "Careem", "industry": "Tech", "score": 85},
-        {"name": "Talabat", "industry": "Food", "score": 78},
-        {"name": "Kitopi", "industry": "Cloud Kitchen", "score": 90}
-    ])
+# ---------- SCRAPER ----------
+def get_website_text(url):
+    try:
+        res = requests.get(url, timeout=5)
+        soup = BeautifulSoup(res.text, "html.parser")
+        return soup.get_text()[:4000]
+    except:
+        return "No data available"
 
-df = st.session_state.data
+# ---------- AI ----------
+def analyze(company, content):
+    prompt = f"""
+    You are a senior business development strategist.
 
-# ---------- DASHBOARD ----------
-if page == "Dashboard":
-    st.subheader("📊 Overview")
+    Analyze the company below:
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Companies", len(df))
-    col2.metric("High Opportunities", len(df[df["score"] > 80]))
-    col3.metric("Average Score", int(df["score"].mean()))
+    Company: {company}
+    Content: {content}
 
-    st.subheader("🔥 Top Companies")
-    st.dataframe(df.sort_values(by="score", ascending=False))
+    Provide:
+    - Clear company summary
+    - Market position
+    - Strategic partnership opportunities
+    - Probability of success (0-100%)
+    - Recommended BD approach
+    - Risk factors
+    """
 
-# ---------- COMPANIES ----------
-elif page == "Companies":
-    st.subheader("🏢 Company Intelligence")
+    response = openai.ChatCompletion.create(
+        model="gpt-4.1-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
 
-    search = st.text_input("Search company")
+    return response.choices[0].message.content
 
-    if search:
-        result = df[df["name"].str.contains(search, case=False)]
+# ---------- RUN ----------
+if st.button("Analyze Company"):
 
-        if not result.empty:
-            company = result.iloc[0]
+    if not company_name or not website:
+        st.warning("Please enter all fields")
+    else:
+        st.info("Collecting real data...")
 
-            st.markdown(f"## {company['name']}")
-            st.write(f"Industry: {company['industry']}")
-            st.write(f"Score: {company['score']}")
+        content = get_website_text(website)
 
-            st.subheader("🤖 AI Insights")
-            st.success("Strong candidate for strategic partnership in GCC expansion.")
+        st.info("Running AI analysis...")
 
-            st.subheader("✉️ Suggested Email")
-            st.code(f"""
-Subject: Partnership with {company['name']}
+        result = analyze(company_name, content)
 
-We see strong alignment between our companies for expansion opportunities.
-""")
-
-# ---------- ADD ----------
-elif page == "Add Company":
-    st.subheader("➕ Add Company")
-
-    name = st.text_input("Name")
-    industry = st.text_input("Industry")
-
-    if st.button("Add"):
-        new = pd.DataFrame([{
-            "name": name,
-            "industry": industry,
-            "score": 70
-        }])
-
-        st.session_state.data = pd.concat([df, new], ignore_index=True)
-        st.success("Added!")
-
-# ---------- EXECUTIVE ----------
-elif page == "Executive View":
-    st.subheader("🚀 Executive Mode")
-
-    top = df.sort_values(by="score", ascending=False).head(5)
-
-    for _, row in top.iterrows():
-        st.markdown(f"### {row['name']}")
-        st.write(f"Score: {row['score']}")
-        st.info("High-value partnership opportunity.")
+        st.success("Analysis Ready")
+        st.write(result)
