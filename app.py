@@ -23,7 +23,7 @@ def scrape_site(url):
         soup = BeautifulSoup(res.text, "html.parser")
 
         text = " ".join([t.get_text() for t in soup.find_all(["h1","h2","p"])])
-        return text.lower()[:8000]
+        return text.lower()[:10000]
     except:
         return ""
 
@@ -43,67 +43,84 @@ def google_search(company):
     except:
         return ""
 
-# ---------- ANALYSIS ----------
-def analyze(text):
+# ---------- CONSULTING ENGINE ----------
+def analyze_company(text):
+
+    text = text.lower()
 
     signals = {
-        "growth": len(re.findall(r"(expand|growth|scale|launch)", text)),
-        "funding": len(re.findall(r"(funding|raised|investment)", text)),
-        "hiring": len(re.findall(r"(hiring|join our team)", text)),
-        "partnership": len(re.findall(r"(partner|collaboration)", text)),
-        "market": len(re.findall(r"(mena|gcc|global)", text))
+        "growth": len(re.findall(r"(expand|expanding|growth|scaling|launch)", text)),
+        "funding": len(re.findall(r"(funding|raised|series|investment)", text)),
+        "hiring": len(re.findall(r"(hiring|join our team|careers)", text)),
+        "partnership": len(re.findall(r"(partner|collaboration|alliance)", text)),
+        "enterprise": len(re.findall(r"(enterprise|b2b|clients|solutions)", text)),
+        "product": len(re.findall(r"(platform|technology|software|solution)", text)),
+        "market": len(re.findall(r"(mena|gcc|global|expansion)", text)),
+        "urgency": len(re.findall(r"(accelerate|rapid|immediately)", text)),
     }
 
-    score = min(
-        signals["growth"]*5 +
-        signals["funding"]*7 +
-        signals["hiring"]*3 +
-        signals["partnership"]*5 +
-        signals["market"]*2,
-        100
-    )
+    fit = signals["enterprise"]*4 + signals["product"]*3
+    growth = signals["growth"]*5 + signals["hiring"]*2
+    readiness = signals["funding"]*6 + signals["enterprise"]*3
+    urgency = signals["urgency"]*5 + signals["growth"]*2
+    access = signals["partnership"]*5 + signals["hiring"]*2
 
-    # BD LOGIC
-    if score > 80:
+    score = int(min(
+        fit*0.2 +
+        growth*0.25 +
+        readiness*0.25 +
+        urgency*0.15 +
+        access*0.15,
+        100
+    ))
+
+    if score > 75:
         priority = "HIGH"
-    elif score > 60:
+    elif score > 55:
         priority = "MEDIUM"
     else:
         priority = "LOW"
 
-    return score, priority, signals
-
-# ---------- REPORT ----------
-def generate_report(name, signals, score):
-
-    why_now = "No strong signals."
-
     if signals["funding"] > 0:
-        why_now = "Company recently shows funding signals → ready to scale."
-
+        why_now = "Funding detected → company is scaling"
     elif signals["growth"] > 2:
-        why_now = "Active expansion → strong BD timing."
+        why_now = "Expansion signals → strong timing"
+    elif signals["hiring"] > 1:
+        why_now = "Hiring → internal growth phase"
+    else:
+        why_now = "No strong urgency"
 
-    deal_type = "Exploratory"
+    if priority == "HIGH":
+        strategy = "Direct high-value partnership pitch"
+    elif priority == "MEDIUM":
+        strategy = "Strategic intro + discovery"
+    else:
+        strategy = "Light outreach"
 
-    if signals["partnership"] > 1:
-        deal_type = "Partnership / Integration"
-
-    strategy = "Start with intro meeting"
-
-    if score > 80:
-        strategy = "Direct BD pitch with clear value proposition"
-
-    risks = "Limited visibility"
-
-    if signals["market"] == 0:
-        risks = "Market focus unclear"
+    risks = []
+    if signals["growth"] == 0:
+        risks.append("No growth signals")
+    if signals["funding"] == 0:
+        risks.append("No funding signals")
+    if signals["enterprise"] == 0:
+        risks.append("Weak B2B signals")
+    if not risks:
+        risks.append("No major risks")
 
     return {
+        "score": score,
+        "priority": priority,
         "why_now": why_now,
-        "deal_type": deal_type,
         "strategy": strategy,
-        "risks": risks
+        "risks": risks,
+        "signals": signals,
+        "dimensions": {
+            "fit": fit,
+            "growth": growth,
+            "readiness": readiness,
+            "urgency": urgency,
+            "access": access
+        }
     }
 
 # ---------- NAV ----------
@@ -129,7 +146,7 @@ elif page == "Analyze":
     name = st.text_input("Company Name")
     url = st.text_input("Website")
 
-    if st.button("Run PRO MAX Analysis"):
+    if st.button("Run Analysis"):
 
         site = scrape_site(url)
         google = google_search(name)
@@ -139,36 +156,36 @@ elif page == "Analyze":
         if full_text.strip() == "":
             st.error("No data found")
         else:
-            score, priority, signals = analyze(full_text)
-            report = generate_report(name, signals, score)
+            result = analyze_company(full_text)
 
             st.markdown("## 🧠 BD Intelligence Report")
 
-            st.metric("Score", score)
-            st.metric("Priority", priority)
-
-            st.markdown("### 🔍 Signals")
-            st.json(signals)
+            st.metric("Score", result["score"])
+            st.metric("Priority", result["priority"])
 
             st.markdown("### 📊 Why Now")
-            st.success(report["why_now"])
-
-            st.markdown("### 🎯 Deal Type")
-            st.info(report["deal_type"])
+            st.success(result["why_now"])
 
             st.markdown("### 🚀 Strategy")
-            st.success(report["strategy"])
+            st.info(result["strategy"])
 
             st.markdown("### ⚠️ Risks")
-            st.warning(report["risks"])
+            for r in result["risks"]:
+                st.warning(r)
 
-            # Save to CRM
+            st.markdown("### 📈 Dimensions")
+            st.json(result["dimensions"])
+
+            st.markdown("### 🔍 Signals")
+            st.json(result["signals"])
+
+            # Save
             new = pd.DataFrame([{
                 "name": name,
-                "score": score,
-                "priority": priority,
+                "score": result["score"],
+                "priority": result["priority"],
                 "stage": "New",
-                "strategy": report["strategy"]
+                "strategy": result["strategy"]
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
@@ -185,6 +202,7 @@ elif page == "CRM":
 
             with col1:
                 st.write(f"**{row['name']}** | Score: {row['score']} | {row['priority']}")
+                st.caption(f"Strategy: {row['strategy']}")
 
             with col2:
                 stage = st.selectbox(
