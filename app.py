@@ -4,77 +4,110 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 
-st.set_page_config(page_title="Alaa BD Pro", layout="wide")
+st.set_page_config(page_title="Alaa BD PRO MAX", layout="wide")
 
-# ---------- STYLE ----------
-st.markdown("""
-<style>
-body {background:#0f172a;color:white;}
-.header {font-size:32px;font-weight:700;}
-.card {background:#111827;padding:15px;border-radius:12px;margin-bottom:10px;}
-</style>
-""", unsafe_allow_html=True)
+st.title("🚀 Alaa BD PRO MAX")
 
-st.markdown('<div class="header">🚀 Alaa BD Pro (Consulting Mode)</div>', unsafe_allow_html=True)
-
-# ---------- NAV ----------
-page = st.sidebar.selectbox("Navigation", [
-    "Dashboard","Analyze","CRM Pipeline"
-])
-
-# ---------- DATA ----------
+# ---------- SESSION ----------
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
-        "name","score","prob","stage","priority","strategy"
+        "name","score","priority","stage","strategy"
     ])
 
 df = st.session_state.data
 
-# ---------- SCRAPER ----------
-def scrape(url):
+# ---------- SCRAPERS ----------
+def scrape_site(url):
     try:
+        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=8)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        text = " ".join([t.get_text() for t in soup.find_all(["h1","h2","p"])])
+        return text.lower()[:8000]
+    except:
+        return ""
+
+def google_search(company):
+    try:
+        url = f"https://www.google.com/search?q={company}+company+news"
         res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
         soup = BeautifulSoup(res.text, "html.parser")
-        return " ".join([t.get_text() for t in soup.find_all(["p","h1","h2"])])[:9000].lower()
+
+        snippets = []
+        for div in soup.find_all("div"):
+            txt = div.get_text()
+            if len(txt) > 60:
+                snippets.append(txt)
+
+        return " ".join(snippets)[:4000].lower()
     except:
         return ""
 
 # ---------- ANALYSIS ----------
 def analyze(text):
 
-    growth = len(re.findall(r"(growth|expand|scale)", text))
-    funding = len(re.findall(r"(funding|investment)", text))
-    market = len(re.findall(r"(mena|gcc|global)", text))
-    tech = len(re.findall(r"(platform|software|ai)", text))
+    signals = {
+        "growth": len(re.findall(r"(expand|growth|scale|launch)", text)),
+        "funding": len(re.findall(r"(funding|raised|investment)", text)),
+        "hiring": len(re.findall(r"(hiring|join our team)", text)),
+        "partnership": len(re.findall(r"(partner|collaboration)", text)),
+        "market": len(re.findall(r"(mena|gcc|global)", text))
+    }
 
-    score = min(growth*5 + funding*6 + market*4 + tech*3, 100)
-    prob = int(score * 0.85)
+    score = min(
+        signals["growth"]*5 +
+        signals["funding"]*7 +
+        signals["hiring"]*3 +
+        signals["partnership"]*5 +
+        signals["market"]*2,
+        100
+    )
 
-    # Consulting logic
-    attractiveness = "Low"
-    if growth > 2 or funding > 1:
-        attractiveness = "High"
+    # BD LOGIC
+    if score > 80:
+        priority = "HIGH"
+    elif score > 60:
+        priority = "MEDIUM"
+    else:
+        priority = "LOW"
 
-    fit = "Medium"
-    if tech > 2:
-        fit = "High"
+    return score, priority, signals
 
-    timing = "Early"
-    if funding > 1:
-        timing = "Optimal"
+# ---------- REPORT ----------
+def generate_report(name, signals, score):
 
-    priority = "Low"
-    if score > 75:
-        priority = "High"
+    why_now = "No strong signals."
 
-    strategy = "General outreach"
+    if signals["funding"] > 0:
+        why_now = "Company recently shows funding signals → ready to scale."
 
-    if priority == "High":
-        strategy = "Direct partnership proposal"
-    elif attractiveness == "High":
-        strategy = "Strategic alignment discussion"
+    elif signals["growth"] > 2:
+        why_now = "Active expansion → strong BD timing."
 
-    return score, prob, attractiveness, fit, timing, priority, strategy
+    deal_type = "Exploratory"
+
+    if signals["partnership"] > 1:
+        deal_type = "Partnership / Integration"
+
+    strategy = "Start with intro meeting"
+
+    if score > 80:
+        strategy = "Direct BD pitch with clear value proposition"
+
+    risks = "Limited visibility"
+
+    if signals["market"] == 0:
+        risks = "Market focus unclear"
+
+    return {
+        "why_now": why_now,
+        "deal_type": deal_type,
+        "strategy": strategy,
+        "risks": risks
+    }
+
+# ---------- NAV ----------
+page = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","CRM"])
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
@@ -84,7 +117,7 @@ if page == "Dashboard":
     c1,c2,c3 = st.columns(3)
 
     c1.metric("Companies", len(df))
-    c2.metric("High Priority", len(df[df["priority"]=="High"]))
+    c2.metric("High Priority", len(df[df["priority"]=="HIGH"]))
     c3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
 
     if not df.empty:
@@ -93,78 +126,72 @@ if page == "Dashboard":
 # ---------- ANALYZE ----------
 elif page == "Analyze":
 
-    name = st.text_input("Company")
+    name = st.text_input("Company Name")
     url = st.text_input("Website")
 
-    if st.button("Run Analysis"):
+    if st.button("Run PRO MAX Analysis"):
 
-        text = scrape(url)
+        site = scrape_site(url)
+        google = google_search(name)
 
-        if text == "":
-            st.error("Failed to fetch")
+        full_text = site + " " + google
+
+        if full_text.strip() == "":
+            st.error("No data found")
         else:
-            score, prob, attr, fit, timing, priority, strategy = analyze(text)
+            score, priority, signals = analyze(full_text)
+            report = generate_report(name, signals, score)
 
-            st.markdown("## 📊 Consulting Analysis")
+            st.markdown("## 🧠 BD Intelligence Report")
 
             st.metric("Score", score)
-            st.metric("Probability", f"{prob}%")
+            st.metric("Priority", priority)
 
-            st.markdown("### 🧠 Strategic View")
-            st.write(f"Market Attractiveness: {attr}")
-            st.write(f"Strategic Fit: {fit}")
-            st.write(f"Timing: {timing}")
+            st.markdown("### 🔍 Signals")
+            st.json(signals)
 
-            st.markdown("### 🎯 Priority")
-            if priority == "High":
-                st.success("High Priority Deal")
-            else:
-                st.info("Normal Priority")
+            st.markdown("### 📊 Why Now")
+            st.success(report["why_now"])
+
+            st.markdown("### 🎯 Deal Type")
+            st.info(report["deal_type"])
 
             st.markdown("### 🚀 Strategy")
-            st.info(strategy)
+            st.success(report["strategy"])
 
-            # save
+            st.markdown("### ⚠️ Risks")
+            st.warning(report["risks"])
+
+            # Save to CRM
             new = pd.DataFrame([{
                 "name": name,
                 "score": score,
-                "prob": prob,
-                "stage": "New",
                 "priority": priority,
-                "strategy": strategy
+                "stage": "New",
+                "strategy": report["strategy"]
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
 
 # ---------- CRM ----------
-elif page == "CRM Pipeline":
+elif page == "CRM":
 
-    st.subheader("📈 Deals Pipeline")
+    st.subheader("📈 Pipeline")
 
     if not df.empty:
-
         for i, row in df.iterrows():
 
             col1, col2 = st.columns([3,1])
 
             with col1:
-                st.markdown(f"""
-                <div class="card">
-                <b>{row['name']}</b><br>
-                Score: {row['score']} | Priority: {row['priority']}<br>
-                Strategy: {row['strategy']}
-                </div>
-                """, unsafe_allow_html=True)
+                st.write(f"**{row['name']}** | Score: {row['score']} | {row['priority']}")
 
             with col2:
                 stage = st.selectbox(
                     "Stage",
                     ["New","Contacted","Negotiation","Closed"],
-                    index=["New","Contacted","Negotiation","Closed"].index(row["stage"]),
                     key=i
                 )
-
                 st.session_state.data.at[i,"stage"] = stage
-
     else:
         st.info("No deals yet")
