@@ -9,207 +9,149 @@ st.set_page_config(page_title="Alaa BD", layout="wide")
 # ---------- STYLE ----------
 st.markdown("""
 <style>
-body {
-    background-color:#0e1117;
-    color:white;
+.main {
+    background-color: #0f172a;
 }
 .header {
-    font-size:42px;
-    font-weight:800;
-    margin-bottom:10px;
-}
-.sub {
-    color:#aaa;
-    margin-bottom:30px;
+    font-size: 34px;
+    font-weight: 700;
 }
 .card {
-    background:#1c1f26;
-    padding:20px;
-    border-radius:16px;
+    background: #111827;
+    padding: 20px;
+    border-radius: 14px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 .metric {
-    font-size:28px;
-    font-weight:700;
+    font-size: 28px;
+    font-weight: bold;
 }
 .small {
-    color:#888;
+    color: #9ca3af;
+}
+.section {
+    margin-top: 30px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------- HEADER ----------
-st.markdown('<div class="header">🚀 Alaa BD</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub">Business Development Intelligence System</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 Alaa BD Platform</div>', unsafe_allow_html=True)
 
 # ---------- SIDEBAR ----------
 page = st.sidebar.radio("Navigation", [
-    "📊 Dashboard",
-    "🔍 Analyze",
-    "📈 Pipeline",
-    "🧠 Executive"
+    "Dashboard",
+    "Analyze",
+    "Pipeline",
+    "Insights"
 ])
 
 # ---------- DATA ----------
 if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["name","score","probability","status"])
+    st.session_state.data = pd.DataFrame(columns=["name","score","probability"])
 
 df = st.session_state.data
 
 # ---------- SCRAPER ----------
 def get_text(url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=6)
+        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
         soup = BeautifulSoup(res.text, "html.parser")
-
-        texts = []
-        for tag in soup.find_all(["p","h1","h2","h3"]):
-            texts.append(tag.get_text())
-
-        return " ".join(texts).lower()[:8000]
+        text = " ".join([t.get_text() for t in soup.find_all(["p","h1","h2","h3"])])
+        return text.lower()[:8000]
     except:
         return ""
 
 # ---------- ANALYSIS ----------
 def analyze_text(text):
-    growth = len(re.findall(r"(growth|scale|expand|launch)", text))
-    funding = len(re.findall(r"(funding|investment|series|capital)", text))
-    market = len(re.findall(r"(mena|gcc|global|market)", text))
-    tech = len(re.findall(r"(ai|platform|software|tech)", text))
-    partnership = len(re.findall(r"(partner|collaborate|alliance)", text))
+    growth = len(re.findall(r"(growth|expand|scale)", text))
+    funding = len(re.findall(r"(funding|investment)", text))
+    tech = len(re.findall(r"(ai|platform|software)", text))
+    partner = len(re.findall(r"(partner|collaboration)", text))
 
-    score = min(growth*4 + funding*5 + partnership*6 + tech*3 + market*2, 100)
+    score = min(growth*5 + funding*6 + tech*4 + partner*6, 100)
+    prob = min(int(score * 0.9), 95)
 
-    probability = min(int((growth*2 + funding*3 + partnership*3 + tech + market)*2), 95)
-
-    return score, probability, {
-        "growth": growth,
-        "funding": funding,
-        "market": market,
-        "tech": tech,
-        "partnership": partnership
-    }
-
-# ---------- STRATEGY ----------
-def generate_strategy(signals):
-    if signals["funding"] > 5:
-        return "🚀 High funding → scaling partnership"
-    if signals["growth"] > 5:
-        return "📈 Growth → expansion deal"
-    if signals["tech"] > 5:
-        return "🧠 Tech → integration partnership"
-    if signals["partnership"] > 3:
-        return "🤝 Open → direct outreach"
-    return "📩 General BD approach"
+    return score, prob
 
 # ---------- DASHBOARD ----------
-if page == "📊 Dashboard":
+if page == "Dashboard":
 
-    st.markdown("## Overview")
+    st.markdown("### Overview")
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
 
-    with col1:
-        st.markdown('<div class="card"><div class="metric">'+str(len(df))+'</div><div class="small">Companies</div></div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="card"><div class="metric">{len(df)}</div><div class="small">Companies</div></div>', unsafe_allow_html=True)
 
-    with col2:
-        high = len(df[df["score"] > 80]) if not df.empty else 0
-        st.markdown(f'<div class="card"><div class="metric">{high}</div><div class="small">High Opportunities</div></div>', unsafe_allow_html=True)
+    high = len(df[df["score"] > 80]) if not df.empty else 0
+    c2.markdown(f'<div class="card"><div class="metric">{high}</div><div class="small">High Value</div></div>', unsafe_allow_html=True)
 
-    with col3:
-        avg = int(df["score"].mean()) if not df.empty else 0
-        st.markdown(f'<div class="card"><div class="metric">{avg}</div><div class="small">Average Score</div></div>', unsafe_allow_html=True)
+    avg = int(df["score"].mean()) if not df.empty else 0
+    c3.markdown(f'<div class="card"><div class="metric">{avg}</div><div class="small">Avg Score</div></div>', unsafe_allow_html=True)
 
-    st.markdown("## Top Companies")
+    st.markdown("### Top Opportunities")
 
     if not df.empty:
         st.dataframe(df.sort_values(by="score", ascending=False), use_container_width=True)
-    else:
-        st.info("No data yet")
 
 # ---------- ANALYZE ----------
-elif page == "🔍 Analyze":
+elif page == "Analyze":
 
-    st.markdown("## Company Analysis")
+    st.markdown("### Analyze Company")
 
-    name = st.text_input("Company Name")
-    website = st.text_input("Website")
+    name = st.text_input("Company")
+    url = st.text_input("Website")
 
-    if st.button("Run Analysis"):
+    if st.button("Analyze"):
 
-        text = get_text(website)
+        text = get_text(url)
 
-        if text.strip() == "":
-            st.error("❌ Failed to fetch data")
+        if text == "":
+            st.error("Failed to fetch data")
         else:
-            score, prob, signals = analyze_text(text)
-            strategy = generate_strategy(signals)
+            score, prob = analyze_text(text)
 
-            st.markdown("### Results")
+            st.success("Analysis Complete")
 
-            c1, c2 = st.columns(2)
-
-            c1.metric("Score", score)
-            c2.metric("Probability", f"{prob}%")
-
-            st.markdown("### Signals")
-            st.json(signals)
+            col1, col2 = st.columns(2)
+            col1.metric("Score", score)
+            col2.metric("Probability", f"{prob}%")
 
             st.markdown("### Strategy")
-            st.success(strategy)
+            st.info("Expand partnership / market entry opportunity")
 
-            st.markdown("### Outreach Email")
-            st.code(f"""
-Subject: Partnership with {name}
-
-We identified strong potential for collaboration.
-Let's explore opportunities together.
-
-Best,
-BD Team
-""")
+            st.markdown("### Email")
+            st.code(f"Let's collaborate with {name} for expansion.")
 
             new = pd.DataFrame([{
                 "name": name,
                 "score": score,
-                "probability": prob,
-                "status": "New"
+                "probability": prob
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
 
 # ---------- PIPELINE ----------
-elif page == "📈 Pipeline":
+elif page == "Pipeline":
 
-    st.markdown("## Deal Pipeline")
+    st.markdown("### Pipeline")
 
     if not df.empty:
         for _, row in df.iterrows():
             st.markdown(f"""
             <div class="card">
             <b>{row['name']}</b><br>
-            Score: {row['score']} | Probability: {row['probability']}%
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("No deals yet")
-
-# ---------- EXECUTIVE ----------
-elif page == "🧠 Executive":
-
-    st.markdown("## Executive Insights")
-
-    if not df.empty:
-        top = df.sort_values(by="score", ascending=False).head(5)
-
-        for _, row in top.iterrows():
-            st.markdown(f"""
-            <div class="card">
-            <h3>{row['name']}</h3>
             Score: {row['score']}<br>
             Probability: {row['probability']}%
             </div>
             """, unsafe_allow_html=True)
+
+# ---------- INSIGHTS ----------
+elif page == "Insights":
+
+    st.markdown("### Insights")
+
+    if not df.empty:
+        st.bar_chart(df.set_index("name")["score"])
     else:
-        st.warning("No insights yet")
+        st.warning("No data")
