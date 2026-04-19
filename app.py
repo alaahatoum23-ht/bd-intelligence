@@ -3,71 +3,64 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
-import datetime
 
-st.set_page_config(page_title="Alaa BD AI", layout="wide")
+st.set_page_config(page_title="Alaa BD", layout="wide")
 
-st.title("🚀 Alaa BD AI (Level 10 System)")
+st.title("🚀 Alaa BD Intelligence")
 
 # ---------- SESSION ----------
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
-        "name","score","priority","stage",
-        "deal","contact","notes","next_action","follow_up"
+        "name","score","priority","stage"
     ])
 
 df = st.session_state.data
 
-# ---------- DATA ----------
+# ---------- SCRAPER ----------
 def scrape(url):
     try:
-        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
-        soup = BeautifulSoup(res.text,"html.parser")
-        return " ".join([t.get_text() for t in soup.find_all(["p","h1","h2"])])[:8000].lower()
+        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        texts = []
+        for tag in soup.find_all(["h1","h2","h3","p"]):
+            t = tag.get_text().strip()
+            if len(t) > 40:
+                texts.append(t)
+
+        return " ".join(texts).lower()
     except:
         return ""
 
-def wikipedia(company):
-    try:
-        url = f"https://en.wikipedia.org/wiki/{company.replace(' ','_')}"
-        return scrape(url)
-    except:
-        return ""
-
-def google(company):
-    try:
-        url = f"https://www.google.com/search?q={company}+company+news"
-        return scrape(url)
-    except:
-        return ""
-
-# ---------- INTELLIGENCE ----------
+# ---------- ANALYSIS ----------
 def analyze(text):
 
-    insights = []
-
     score = 0
+    reasons = []
 
-    # Contextual detection
-    if "expanding to" in text:
-        score += 15
-        insights.append("Geographic expansion detected")
-
-    if "raised" in text or "funding" in text:
+    if "enterprise" in text or "b2b" in text:
         score += 20
-        insights.append("Funding activity → ready to invest")
+        reasons.append("B2B business")
 
-    if "we are hiring" in text:
+    if "platform" in text or "software" in text:
+        score += 15
+        reasons.append("Tech platform")
+
+    if "client" in text or "customers" in text:
         score += 10
-        insights.append("Hiring → scaling operations")
+        reasons.append("Has active customers")
+
+    if "expand" in text or "growth" in text:
+        score += 20
+        reasons.append("Growth signals")
+
+    if "hiring" in text or "careers" in text:
+        score += 10
+        reasons.append("Hiring activity")
 
     if "partner" in text:
         score += 15
-        insights.append("Open to partnerships")
-
-    if "enterprise" in text or "b2b" in text:
-        score += 10
-        insights.append("B2B business model")
+        reasons.append("Partnership potential")
 
     score = min(score,100)
 
@@ -78,45 +71,21 @@ def analyze(text):
     else:
         priority = "LOW"
 
-    # Decision Output
-    why = insights if insights else ["No strong signals"]
-
-    deal = "Exploratory"
-    if "funding" in text:
-        deal = "Partnership / Vendor Deal"
-
-    contact = "Business Development Manager"
-    if "enterprise" in text:
-        contact = "Head of Partnerships"
-
-    deal_size = "Small"
-    if score > 70:
-        deal_size = "Large"
-
-    competitors = []
-    if "fintech" in text:
-        competitors = ["Stripe-like","Payment platforms"]
-
-    return score, priority, why, deal, contact, deal_size, competitors
-
-# ---------- LEADS ----------
-def generate_leads(industry):
-    return [
-        f"{industry} Company 1",
-        f"{industry} Company 2",
-        f"{industry} Startup X"
-    ]
+    return score, priority, reasons
 
 # ---------- NAV ----------
-page = st.sidebar.selectbox("Menu", [
-    "Dashboard","Analyze","Leads","CRM"
-])
+page = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","CRM"])
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
 
-    st.metric("Companies", len(df))
-    st.metric("High Priority", len(df[df["priority"]=="HIGH"]))
+    st.subheader("📊 Overview")
+
+    c1,c2,c3 = st.columns(3)
+
+    c1.metric("Companies", len(df))
+    c2.metric("High Priority", len(df[df["priority"]=="HIGH"]))
+    c3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
 
     st.dataframe(df)
 
@@ -124,69 +93,51 @@ if page == "Dashboard":
 elif page == "Analyze":
 
     name = st.text_input("Company Name")
-    url = st.text_input("Website")
+    url = st.text_input("Website URL")
 
-    if st.button("Analyze"):
+    if st.button("Analyze Company"):
 
-        text = scrape(url) + wikipedia(name) + google(name)
+        text = scrape(url)
 
-        score, priority, why, deal, contact, deal_size, competitors = analyze(text)
+        if text == "":
+            st.error("Could not fetch data from website")
+        else:
+            score, priority, reasons = analyze(text)
 
-        st.metric("Score", score)
-        st.metric("Priority", priority)
+            st.metric("Score", score)
+            st.metric("Priority", priority)
 
-        st.write("### Why this company")
-        for w in why:
-            st.write("-", w)
+            st.write("### Why this result")
+            for r in reasons:
+                st.write("-", r)
 
-        st.write("### Opportunity")
-        st.write(deal)
+            # Save
+            new = pd.DataFrame([{
+                "name": name,
+                "score": score,
+                "priority": priority,
+                "stage": "New"
+            }])
 
-        st.write("### Deal Size")
-        st.write(deal_size)
-
-        st.write("### Who to Contact")
-        st.write(contact)
-
-        st.write("### Competitors")
-        st.write(competitors)
-
-        # Save
-        new = pd.DataFrame([{
-            "name": name,
-            "score": score,
-            "priority": priority,
-            "stage": "New",
-            "deal": deal,
-            "contact": contact,
-            "notes": "",
-            "next_action": "",
-            "follow_up": ""
-        }])
-
-        st.session_state.data = pd.concat([df, new], ignore_index=True)
-
-# ---------- LEADS ----------
-elif page == "Leads":
-
-    industry = st.text_input("Industry")
-
-    if st.button("Generate Leads"):
-        leads = generate_leads(industry)
-        st.write(leads)
+            st.session_state.data = pd.concat([df, new], ignore_index=True)
 
 # ---------- CRM ----------
 elif page == "CRM":
 
-    for i,row in df.iterrows():
+    st.subheader("📈 Pipeline")
 
-        st.write(f"### {row['name']}")
+    if not df.empty:
+        for i,row in df.iterrows():
 
-        st.text_area("Notes", key=f"notes{i}")
-        st.text_input("Next Action", key=f"action{i}")
-        st.date_input("Follow Up", key=f"date{i}")
+            col1,col2 = st.columns([3,1])
 
-        stage = st.selectbox("Stage",
-            ["New","Contacted","Negotiation","Closed"], key=f"stage{i}")
+            with col1:
+                st.write(f"**{row['name']}** | Score: {row['score']}")
 
-        st.session_state.data.at[i,"stage"] = stage
+            with col2:
+                stage = st.selectbox(
+                    "Stage",
+                    ["New","Contacted","Negotiation","Closed"],
+                    key=i
+                )
+                st.session_state.data.at[i,"stage"] = stage
