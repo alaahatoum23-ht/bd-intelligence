@@ -4,178 +4,167 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 
-st.set_page_config(page_title="Alaa BD", layout="wide")
+st.set_page_config(page_title="Alaa BD Pro", layout="wide")
 
 # ---------- STYLE ----------
 st.markdown("""
 <style>
-.main {background-color:#0f172a;}
-.header {font-size:34px;font-weight:700;}
-.card {
-    background:#111827;
-    padding:20px;
-    border-radius:14px;
-    margin-bottom:10px;
-}
-.metric {font-size:28px;font-weight:bold;}
-.small {color:#9ca3af;}
+body {background:#0f172a;color:white;}
+.header {font-size:32px;font-weight:700;}
+.card {background:#111827;padding:15px;border-radius:12px;margin-bottom:10px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- HEADER ----------
-st.markdown('<div class="header">🚀 Alaa BD Platform</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">🚀 Alaa BD Pro (Consulting Mode)</div>', unsafe_allow_html=True)
 
-# ---------- SIDEBAR ----------
-page = st.sidebar.radio("Navigation", [
-    "Dashboard",
-    "Analyze",
-    "Pipeline",
-    "Insights"
+# ---------- NAV ----------
+page = st.sidebar.selectbox("Navigation", [
+    "Dashboard","Analyze","CRM Pipeline"
 ])
 
 # ---------- DATA ----------
 if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["name","score","probability"])
+    st.session_state.data = pd.DataFrame(columns=[
+        "name","score","prob","stage","priority","strategy"
+    ])
 
 df = st.session_state.data
 
 # ---------- SCRAPER ----------
-def get_text(url):
+def scrape(url):
     try:
-        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=6)
+        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"})
         soup = BeautifulSoup(res.text, "html.parser")
-        text = " ".join([t.get_text() for t in soup.find_all(["p","h1","h2","h3"])])
-        return text.lower()[:8000]
+        return " ".join([t.get_text() for t in soup.find_all(["p","h1","h2"])])[:9000].lower()
     except:
         return ""
 
 # ---------- ANALYSIS ----------
-def analyze_text(text):
+def analyze(text):
 
-    signals = {
-        "growth": len(re.findall(r"(growth|expand|scale|launch)", text)),
-        "funding": len(re.findall(r"(funding|investment|series|capital)", text)),
-        "tech": len(re.findall(r"(ai|platform|software|technology)", text)),
-        "partnership": len(re.findall(r"(partner|collaboration|alliance)", text)),
-        "market": len(re.findall(r"(mena|gcc|global|market)", text))
-    }
+    growth = len(re.findall(r"(growth|expand|scale)", text))
+    funding = len(re.findall(r"(funding|investment)", text))
+    market = len(re.findall(r"(mena|gcc|global)", text))
+    tech = len(re.findall(r"(platform|software|ai)", text))
 
-    weights = {
-        "growth": 4,
-        "funding": 5,
-        "tech": 3,
-        "partnership": 6,
-        "market": 2
-    }
+    score = min(growth*5 + funding*6 + market*4 + tech*3, 100)
+    prob = int(score * 0.85)
 
-    score = 0
-    explanation = []
+    # Consulting logic
+    attractiveness = "Low"
+    if growth > 2 or funding > 1:
+        attractiveness = "High"
 
-    for key in signals:
-        contribution = signals[key] * weights[key]
-        score += contribution
+    fit = "Medium"
+    if tech > 2:
+        fit = "High"
 
-        if signals[key] > 0:
-            explanation.append(
-                f"{key.upper()} detected ({signals[key]} mentions) → +{contribution} points"
-            )
+    timing = "Early"
+    if funding > 1:
+        timing = "Optimal"
 
-    score = min(score, 100)
-    probability = min(int(score * 0.9), 95)
+    priority = "Low"
+    if score > 75:
+        priority = "High"
 
-    return score, probability, signals, explanation
+    strategy = "General outreach"
+
+    if priority == "High":
+        strategy = "Direct partnership proposal"
+    elif attractiveness == "High":
+        strategy = "Strategic alignment discussion"
+
+    return score, prob, attractiveness, fit, timing, priority, strategy
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
 
-    st.markdown("### Overview")
+    st.subheader("📊 Overview")
 
-    c1, c2, c3 = st.columns(3)
+    c1,c2,c3 = st.columns(3)
 
-    c1.markdown(f'<div class="card"><div class="metric">{len(df)}</div><div class="small">Companies</div></div>', unsafe_allow_html=True)
-
-    high = len(df[df["score"] > 80]) if not df.empty else 0
-    c2.markdown(f'<div class="card"><div class="metric">{high}</div><div class="small">High Value</div></div>', unsafe_allow_html=True)
-
-    avg = int(df["score"].mean()) if not df.empty else 0
-    c3.markdown(f'<div class="card"><div class="metric">{avg}</div><div class="small">Avg Score</div></div>', unsafe_allow_html=True)
+    c1.metric("Companies", len(df))
+    c2.metric("High Priority", len(df[df["priority"]=="High"]))
+    c3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
 
     if not df.empty:
-        st.dataframe(df.sort_values(by="score", ascending=False), use_container_width=True)
+        st.dataframe(df)
 
 # ---------- ANALYZE ----------
 elif page == "Analyze":
 
-    st.markdown("### Analyze Company")
-
     name = st.text_input("Company")
     url = st.text_input("Website")
 
-    if st.button("Analyze"):
+    if st.button("Run Analysis"):
 
-        text = get_text(url)
+        text = scrape(url)
 
         if text == "":
-            st.error("❌ Failed to fetch data")
+            st.error("Failed to fetch")
         else:
-            score, prob, signals, explanation = analyze_text(text)
+            score, prob, attr, fit, timing, priority, strategy = analyze(text)
 
-            st.success("Analysis Complete")
+            st.markdown("## 📊 Consulting Analysis")
 
-            col1, col2 = st.columns(2)
-            col1.metric("Score", score)
-            col2.metric("Probability", f"{prob}%")
+            st.metric("Score", score)
+            st.metric("Probability", f"{prob}%")
 
-            st.markdown("### 📊 Why this score?")
-            for line in explanation:
-                st.write("✔️ " + line)
+            st.markdown("### 🧠 Strategic View")
+            st.write(f"Market Attractiveness: {attr}")
+            st.write(f"Strategic Fit: {fit}")
+            st.write(f"Timing: {timing}")
 
-            st.markdown("### 🧠 Interpretation")
-
-            if score > 80:
-                st.success("High opportunity: strong signals detected")
-            elif score > 60:
-                st.info("Moderate opportunity")
+            st.markdown("### 🎯 Priority")
+            if priority == "High":
+                st.success("High Priority Deal")
             else:
-                st.warning("Low opportunity")
+                st.info("Normal Priority")
 
-            st.markdown("### Strategy")
-            st.info("Recommend partnership / expansion approach")
+            st.markdown("### 🚀 Strategy")
+            st.info(strategy)
 
-            st.markdown("### Email")
-            st.code(f"Let's collaborate with {name} for expansion opportunities.")
-
+            # save
             new = pd.DataFrame([{
                 "name": name,
                 "score": score,
-                "probability": prob
+                "prob": prob,
+                "stage": "New",
+                "priority": priority,
+                "strategy": strategy
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
 
-# ---------- PIPELINE ----------
-elif page == "Pipeline":
+# ---------- CRM ----------
+elif page == "CRM Pipeline":
 
-    st.markdown("### Pipeline")
-
-    if not df.empty:
-        for _, row in df.iterrows():
-            st.markdown(f"""
-            <div class="card">
-            <b>{row['name']}</b><br>
-            Score: {row['score']}<br>
-            Probability: {row['probability']}%
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("No data")
-
-# ---------- INSIGHTS ----------
-elif page == "Insights":
-
-    st.markdown("### Insights")
+    st.subheader("📈 Deals Pipeline")
 
     if not df.empty:
-        st.bar_chart(df.set_index("name")["score"])
+
+        for i, row in df.iterrows():
+
+            col1, col2 = st.columns([3,1])
+
+            with col1:
+                st.markdown(f"""
+                <div class="card">
+                <b>{row['name']}</b><br>
+                Score: {row['score']} | Priority: {row['priority']}<br>
+                Strategy: {row['strategy']}
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col2:
+                stage = st.selectbox(
+                    "Stage",
+                    ["New","Contacted","Negotiation","Closed"],
+                    index=["New","Contacted","Negotiation","Closed"].index(row["stage"]),
+                    key=i
+                )
+
+                st.session_state.data.at[i,"stage"] = stage
+
     else:
-        st.warning("No data yet")
+        st.info("No deals yet")
