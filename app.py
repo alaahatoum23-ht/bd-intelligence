@@ -3,6 +3,8 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
+import matplotlib.pyplot as plt
+import numpy as np
 
 st.set_page_config(page_title="Alaa BD PRO MAX", layout="wide")
 
@@ -11,7 +13,8 @@ st.title("🚀 Alaa BD PRO MAX")
 # ---------- SESSION ----------
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
-        "name","score","priority","stage","strategy"
+        "name","score","priority","stage","strategy",
+        "fit","growth","readiness","urgency","access"
     ])
 
 df = st.session_state.data
@@ -21,7 +24,6 @@ def scrape_site(url):
     try:
         res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=8)
         soup = BeautifulSoup(res.text, "html.parser")
-
         text = " ".join([t.get_text() for t in soup.find_all(["h1","h2","p"])])
         return text.lower()[:10000]
     except:
@@ -43,20 +45,18 @@ def google_search(company):
     except:
         return ""
 
-# ---------- CONSULTING ENGINE ----------
+# ---------- ANALYSIS ----------
 def analyze_company(text):
 
-    text = text.lower()
-
     signals = {
-        "growth": len(re.findall(r"(expand|expanding|growth|scaling|launch)", text)),
-        "funding": len(re.findall(r"(funding|raised|series|investment)", text)),
-        "hiring": len(re.findall(r"(hiring|join our team|careers)", text)),
-        "partnership": len(re.findall(r"(partner|collaboration|alliance)", text)),
-        "enterprise": len(re.findall(r"(enterprise|b2b|clients|solutions)", text)),
-        "product": len(re.findall(r"(platform|technology|software|solution)", text)),
-        "market": len(re.findall(r"(mena|gcc|global|expansion)", text)),
-        "urgency": len(re.findall(r"(accelerate|rapid|immediately)", text)),
+        "growth": len(re.findall(r"(expand|growth|scale|launch)", text)),
+        "funding": len(re.findall(r"(funding|raised|investment)", text)),
+        "hiring": len(re.findall(r"(hiring|careers)", text)),
+        "partnership": len(re.findall(r"(partner|collaboration)", text)),
+        "enterprise": len(re.findall(r"(enterprise|b2b|clients)", text)),
+        "product": len(re.findall(r"(platform|software|solution)", text)),
+        "market": len(re.findall(r"(mena|gcc|global)", text)),
+        "urgency": len(re.findall(r"(accelerate|rapid)", text)),
     }
 
     fit = signals["enterprise"]*4 + signals["product"]*3
@@ -66,11 +66,7 @@ def analyze_company(text):
     access = signals["partnership"]*5 + signals["hiring"]*2
 
     score = int(min(
-        fit*0.2 +
-        growth*0.25 +
-        readiness*0.25 +
-        urgency*0.15 +
-        access*0.15,
+        fit*0.2 + growth*0.25 + readiness*0.25 + urgency*0.15 + access*0.15,
         100
     ))
 
@@ -81,50 +77,34 @@ def analyze_company(text):
     else:
         priority = "LOW"
 
-    if signals["funding"] > 0:
-        why_now = "Funding detected → company is scaling"
-    elif signals["growth"] > 2:
-        why_now = "Expansion signals → strong timing"
-    elif signals["hiring"] > 1:
-        why_now = "Hiring → internal growth phase"
-    else:
-        why_now = "No strong urgency"
-
-    if priority == "HIGH":
-        strategy = "Direct high-value partnership pitch"
-    elif priority == "MEDIUM":
-        strategy = "Strategic intro + discovery"
-    else:
-        strategy = "Light outreach"
-
-    risks = []
-    if signals["growth"] == 0:
-        risks.append("No growth signals")
-    if signals["funding"] == 0:
-        risks.append("No funding signals")
-    if signals["enterprise"] == 0:
-        risks.append("Weak B2B signals")
-    if not risks:
-        risks.append("No major risks")
-
-    return {
-        "score": score,
-        "priority": priority,
-        "why_now": why_now,
-        "strategy": strategy,
-        "risks": risks,
-        "signals": signals,
-        "dimensions": {
-            "fit": fit,
-            "growth": growth,
-            "readiness": readiness,
-            "urgency": urgency,
-            "access": access
-        }
+    return score, priority, {
+        "fit": fit,
+        "growth": growth,
+        "readiness": readiness,
+        "urgency": urgency,
+        "access": access
     }
 
+# ---------- RADAR CHART ----------
+def radar_chart(data, title):
+    labels = list(data.keys())
+    values = list(data.values())
+
+    angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False)
+    values += values[:1]
+    angles = np.append(angles, angles[0])
+
+    fig, ax = plt.subplots(subplot_kw=dict(polar=True))
+    ax.plot(angles, values)
+    ax.fill(angles, values, alpha=0.2)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    ax.set_title(title)
+
+    return fig
+
 # ---------- NAV ----------
-page = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","CRM"])
+page = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","Compare","CRM"])
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
@@ -132,7 +112,6 @@ if page == "Dashboard":
     st.subheader("📊 Overview")
 
     c1,c2,c3 = st.columns(3)
-
     c1.metric("Companies", len(df))
     c2.metric("High Priority", len(df[df["priority"]=="HIGH"]))
     c3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
@@ -150,45 +129,77 @@ elif page == "Analyze":
 
         site = scrape_site(url)
         google = google_search(name)
-
         full_text = site + " " + google
 
         if full_text.strip() == "":
             st.error("No data found")
         else:
-            result = analyze_company(full_text)
+            score, priority, dims = analyze_company(full_text)
 
-            st.markdown("## 🧠 BD Intelligence Report")
+            st.metric("Score", score)
+            st.metric("Priority", priority)
 
-            st.metric("Score", result["score"])
-            st.metric("Priority", result["priority"])
+            st.markdown("### 🧠 Radar Analysis")
+            fig = radar_chart(dims, "BD Profile")
+            st.pyplot(fig)
 
-            st.markdown("### 📊 Why Now")
-            st.success(result["why_now"])
-
-            st.markdown("### 🚀 Strategy")
-            st.info(result["strategy"])
-
-            st.markdown("### ⚠️ Risks")
-            for r in result["risks"]:
-                st.warning(r)
-
-            st.markdown("### 📈 Dimensions")
-            st.json(result["dimensions"])
-
-            st.markdown("### 🔍 Signals")
-            st.json(result["signals"])
+            st.markdown("### 📊 Dimensions Breakdown")
+            fig2, ax = plt.subplots()
+            ax.bar(dims.keys(), dims.values())
+            st.pyplot(fig2)
 
             # Save
             new = pd.DataFrame([{
                 "name": name,
-                "score": result["score"],
-                "priority": result["priority"],
+                "score": score,
+                "priority": priority,
                 "stage": "New",
-                "strategy": result["strategy"]
+                "strategy": "TBD",
+                **dims
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
+
+# ---------- COMPARE ----------
+elif page == "Compare":
+
+    st.subheader("⚖️ Compare Companies")
+
+    if len(df) >= 2:
+
+        names = df["name"].tolist()
+        selected = st.multiselect("Select companies", names)
+
+        if len(selected) >= 2:
+
+            comp = df[df["name"].isin(selected)]
+
+            st.dataframe(comp)
+
+            st.markdown("### 📊 Score Comparison")
+            st.bar_chart(comp.set_index("name")["score"])
+
+            st.markdown("### 🧠 Radar Comparison")
+
+            fig, ax = plt.subplots(subplot_kw=dict(polar=True))
+
+            for _, row in comp.iterrows():
+                values = [row["fit"], row["growth"], row["readiness"], row["urgency"], row["access"]]
+                values += values[:1]
+
+                angles = np.linspace(0, 2*np.pi, 5, endpoint=False)
+                angles = np.append(angles, angles[0])
+
+                ax.plot(angles, values, label=row["name"])
+
+            ax.set_xticks(angles[:-1])
+            ax.set_xticklabels(["fit","growth","readiness","urgency","access"])
+            ax.legend()
+
+            st.pyplot(fig)
+
+    else:
+        st.info("Add at least 2 companies")
 
 # ---------- CRM ----------
 elif page == "CRM":
@@ -202,7 +213,6 @@ elif page == "CRM":
 
             with col1:
                 st.write(f"**{row['name']}** | Score: {row['score']} | {row['priority']}")
-                st.caption(f"Strategy: {row['strategy']}")
 
             with col2:
                 stage = st.selectbox(
@@ -211,5 +221,3 @@ elif page == "CRM":
                     key=i
                 )
                 st.session_state.data.at[i,"stage"] = stage
-    else:
-        st.info("No deals yet")
