@@ -2,135 +2,170 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-from openai import OpenAI
+import re
 
-# ---------- CONFIG ----------
 st.set_page_config(page_title="BD Intelligence OS", layout="wide")
-
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- STYLE ----------
 st.markdown("""
 <style>
 body {background-color:#0e1117;color:white;}
-.big-title {font-size:38px;font-weight:700;}
-.card {padding:20px;border-radius:15px;background:#1c1f26;}
+.block {background:#1c1f26;padding:20px;border-radius:15px;}
+.title {font-size:36px;font-weight:700;}
+.metric {font-size:24px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- HEADER ----------
-st.markdown('<p class="big-title">🚀 BD Intelligence OS</p>', unsafe_allow_html=True)
+st.markdown('<div class="title">🚀 BD Intelligence OS (No API)</div>', unsafe_allow_html=True)
 
-# ---------- SIDEBAR ----------
+# ---------- NAV ----------
 page = st.sidebar.selectbox("Navigation", [
     "Dashboard",
-    "AI Analysis",
-    "Companies",
+    "Analyze Company",
+    "Pipeline",
     "Add Company",
     "Executive View"
 ])
 
 # ---------- STORAGE ----------
 if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=["name","industry","score"])
+    st.session_state.data = pd.DataFrame(columns=["name","industry","score","probability","status"])
 
 df = st.session_state.data
 
 # ---------- SCRAPER ----------
-def get_website_text(url):
+def get_text(url):
     try:
-        res = requests.get(url, timeout=6)
+        res = requests.get(url, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
-        return soup.get_text()[:4000]
+        text = soup.get_text().lower()
+        return text[:5000]
     except:
-        return "No data"
+        return ""
 
-# ---------- AI ----------
-def analyze(company, content):
-    prompt = f"""
-    You are a senior business development strategist.
+# ---------- ANALYSIS ENGINE ----------
+def analyze_text(text):
 
-    Analyze:
-    Company: {company}
-    Content: {content}
+    keywords = {
+        "growth": ["growth","scale","expansion","increase"],
+        "tech": ["ai","platform","software","technology"],
+        "market": ["market","global","region","gulf","mena"],
+        "partnership": ["partner","collaboration","alliance"],
+        "funding": ["funding","investment","series","capital"]
+    }
 
-    Return:
-    - Summary
-    - Market Position
-    - Opportunities
-    - Risks
-    - Probability of partnership (0-100%)
-    - Recommended BD approach
-    """
-
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return response.choices[0].message.content
-
-# ---------- SCORING ----------
-def calculate_score(text):
     score = 50
-    if "growth" in text.lower():
-        score += 15
-    if "expansion" in text.lower():
-        score += 15
-    if "partnership" in text.lower():
-        score += 20
-    return min(score,100)
+
+    signals = {}
+
+    for k, words in keywords.items():
+        count = sum([len(re.findall(w, text)) for w in words])
+        signals[k] = count
+
+    score += signals["growth"] * 2
+    score += signals["partnership"] * 3
+    score += signals["market"] * 1.5
+    score += signals["tech"] * 2
+
+    score = min(score, 100)
+
+    probability = int(score * 0.9)
+
+    return score, probability, signals
+
+# ---------- STRATEGY ENGINE ----------
+def generate_strategy(signals):
+
+    if signals["growth"] > 5:
+        return "High growth → propose expansion partnership"
+
+    if signals["funding"] > 3:
+        return "Recently funded → pitch scaling support"
+
+    if signals["tech"] > 5:
+        return "Tech driven → integration partnership"
+
+    return "General BD outreach recommended"
 
 # ---------- DASHBOARD ----------
 if page == "Dashboard":
+
     st.subheader("📊 Overview")
 
     col1, col2, col3 = st.columns(3)
 
     col1.metric("Companies", len(df))
-    col2.metric("High Opportunities", len(df[df["score"] > 80]) if not df.empty else 0)
+    col2.metric("High Score", len(df[df["score"] > 80]))
     col3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
 
     if not df.empty:
         st.dataframe(df.sort_values(by="score", ascending=False))
 
-# ---------- AI ----------
-elif page == "AI Analysis":
+# ---------- ANALYZE ----------
+elif page == "Analyze Company":
 
-    st.subheader("🤖 AI Company Intelligence")
+    st.subheader("🔍 Company Analysis")
 
     name = st.text_input("Company Name")
-    website = st.text_input("Website")
+    website = st.text_input("Website URL")
 
     if st.button("Analyze"):
 
-        if not name or not website:
-            st.warning("Fill all fields")
-        else:
-            st.info("Collecting data...")
+        st.info("Scraping website...")
 
-            content = get_website_text(website)
+        text = get_text(website)
 
-            st.info("Running AI...")
+        score, prob, signals = analyze_text(text)
 
-            result = analyze(name, content)
+        strategy = generate_strategy(signals)
 
-            score = calculate_score(result)
+        st.success("Analysis Complete")
 
-            st.success("Analysis Ready")
+        st.metric("Score", score)
+        st.metric("Probability", f"{prob}%")
 
-            st.write(result)
+        st.write("### Signals")
+        st.json(signals)
 
-            st.metric("BD Opportunity Score", score)
+        st.write("### Strategy")
+        st.success(strategy)
 
-# ---------- COMPANIES ----------
-elif page == "Companies":
-    st.subheader("🏢 Companies")
+        st.write("### Suggested Outreach Email")
+        st.code(f"""
+Subject: Partnership Opportunity with {name}
+
+We see strong growth and expansion signals in your company.
+We would like to explore collaboration opportunities.
+
+Best,
+BD Team
+""")
+
+        # save
+        new = pd.DataFrame([{
+            "name": name,
+            "industry": "Unknown",
+            "score": score,
+            "probability": prob,
+            "status": "New"
+        }])
+
+        st.session_state.data = pd.concat([df, new], ignore_index=True)
+
+# ---------- PIPELINE ----------
+elif page == "Pipeline":
+
+    st.subheader("📈 BD Pipeline")
 
     if not df.empty:
-        st.dataframe(df)
-    else:
-        st.info("No companies yet")
+        status = st.selectbox("Filter", ["All","New","Contacted","Negotiation"])
+
+        if status != "All":
+            filtered = df[df["status"] == status]
+        else:
+            filtered = df
+
+        st.dataframe(filtered)
 
 # ---------- ADD ----------
 elif page == "Add Company":
@@ -144,23 +179,29 @@ elif page == "Add Company":
         new = pd.DataFrame([{
             "name": name,
             "industry": industry,
-            "score": 70
+            "score": 60,
+            "probability": 50,
+            "status": "New"
         }])
 
         st.session_state.data = pd.concat([df, new], ignore_index=True)
         st.success("Added")
 
-# ---------- EXECUTIVE ----------
+# ---------- EXEC ----------
 elif page == "Executive View":
 
     st.subheader("🚀 Executive Insights")
 
     if not df.empty:
+
         top = df.sort_values(by="score", ascending=False).head(5)
 
         for _, row in top.iterrows():
             st.markdown(f"### {row['name']}")
             st.write(f"Score: {row['score']}")
-            st.info("High-value BD opportunity")
-    else:
-        st.warning("No data yet")
+            st.write(f"Probability: {row['probability']}%")
+
+            if row["score"] > 80:
+                st.success("🔥 High Priority Deal")
+            else:
+                st.info("Standard Opportunity")
