@@ -1,143 +1,111 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
 import pandas as pd
-import re
+from scraper import get_clean_text
+from engine import analyze
+from ui import load_style
+import matplotlib.pyplot as plt
+import numpy as np
 
-st.set_page_config(page_title="Alaa BD", layout="wide")
+st.set_page_config(layout="wide")
+load_style()
 
 st.title("🚀 Alaa BD Intelligence")
 
-# ---------- SESSION ----------
+# SESSION
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
-        "name","score","priority","stage"
+        "name","score","priority","stage","deal","contact"
     ])
 
 df = st.session_state.data
 
-# ---------- SCRAPER ----------
-def scrape(url):
-    try:
-        res = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+menu = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","Compare","CRM"])
 
-        texts = []
-        for tag in soup.find_all(["h1","h2","h3","p"]):
-            t = tag.get_text().strip()
-            if len(t) > 40:
-                texts.append(t)
-
-        return " ".join(texts).lower()
-    except:
-        return ""
-
-# ---------- ANALYSIS ----------
-def analyze(text):
-
-    score = 0
-    reasons = []
-
-    if "enterprise" in text or "b2b" in text:
-        score += 20
-        reasons.append("B2B business")
-
-    if "platform" in text or "software" in text:
-        score += 15
-        reasons.append("Tech platform")
-
-    if "client" in text or "customers" in text:
-        score += 10
-        reasons.append("Has active customers")
-
-    if "expand" in text or "growth" in text:
-        score += 20
-        reasons.append("Growth signals")
-
-    if "hiring" in text or "careers" in text:
-        score += 10
-        reasons.append("Hiring activity")
-
-    if "partner" in text:
-        score += 15
-        reasons.append("Partnership potential")
-
-    score = min(score,100)
-
-    if score > 70:
-        priority = "HIGH"
-    elif score > 40:
-        priority = "MEDIUM"
-    else:
-        priority = "LOW"
-
-    return score, priority, reasons
-
-# ---------- NAV ----------
-page = st.sidebar.selectbox("Menu", ["Dashboard","Analyze","CRM"])
-
-# ---------- DASHBOARD ----------
-if page == "Dashboard":
-
-    st.subheader("📊 Overview")
+# DASHBOARD
+if menu == "Dashboard":
 
     c1,c2,c3 = st.columns(3)
-
     c1.metric("Companies", len(df))
     c2.metric("High Priority", len(df[df["priority"]=="HIGH"]))
     c3.metric("Avg Score", int(df["score"].mean()) if not df.empty else 0)
 
     st.dataframe(df)
 
-# ---------- ANALYZE ----------
-elif page == "Analyze":
+# ANALYZE
+elif menu == "Analyze":
 
-    name = st.text_input("Company Name")
-    url = st.text_input("Website URL")
+    name = st.text_input("Company")
+    url = st.text_input("Website")
 
-    if st.button("Analyze Company"):
+    if st.button("Analyze"):
 
-        text = scrape(url)
+        text = get_clean_text(url)
 
         if text == "":
-            st.error("Could not fetch data from website")
+            st.error("Failed to fetch data")
         else:
-            score, priority, reasons = analyze(text)
+            result = analyze(text)
 
-            st.metric("Score", score)
-            st.metric("Priority", priority)
+            st.metric("Score", result["score"])
+            st.metric("Priority", result["priority"])
 
-            st.write("### Why this result")
-            for r in reasons:
-                st.write("-", r)
+            st.write("### Insights")
+            for i in result["insights"]:
+                st.write("-", i)
+
+            st.write("### Deal Strategy")
+            st.write(result["deal"])
+
+            st.write("### Contact")
+            st.write(result["contact"])
+
+            # Radar
+            vals = [result["score"], 50, 60, 40, 70]
+            angles = np.linspace(0, 2*np.pi, len(vals), endpoint=False)
+            vals += vals[:1]
+            angles = np.append(angles, angles[0])
+
+            fig, ax = plt.subplots(subplot_kw=dict(polar=True))
+            ax.plot(angles, vals)
+            ax.fill(angles, vals, alpha=0.2)
+
+            st.pyplot(fig)
 
             # Save
             new = pd.DataFrame([{
                 "name": name,
-                "score": score,
-                "priority": priority,
-                "stage": "New"
+                "score": result["score"],
+                "priority": result["priority"],
+                "stage": "New",
+                "deal": result["deal"],
+                "contact": result["contact"]
             }])
 
             st.session_state.data = pd.concat([df, new], ignore_index=True)
 
-# ---------- CRM ----------
-elif page == "CRM":
+# COMPARE
+elif menu == "Compare":
 
-    st.subheader("📈 Pipeline")
+    if len(df) >= 2:
+        selected = st.multiselect("Select", df["name"])
 
-    if not df.empty:
-        for i,row in df.iterrows():
+        if len(selected) >= 2:
+            comp = df[df["name"].isin(selected)]
+            st.dataframe(comp)
+            st.bar_chart(comp.set_index("name")["score"])
 
-            col1,col2 = st.columns([3,1])
+# CRM
+elif menu == "CRM":
 
-            with col1:
-                st.write(f"**{row['name']}** | Score: {row['score']}")
+    for i,row in df.iterrows():
+        col1,col2 = st.columns([3,1])
 
-            with col2:
-                stage = st.selectbox(
-                    "Stage",
-                    ["New","Contacted","Negotiation","Closed"],
-                    key=i
-                )
-                st.session_state.data.at[i,"stage"] = stage
+        with col1:
+            st.write(f"{row['name']} | {row['score']}")
+
+        with col2:
+            stage = st.selectbox("Stage",
+                ["New","Contacted","Negotiation","Closed"],
+                key=i)
+
+            st.session_state.data.at[i,"stage"] = stage
